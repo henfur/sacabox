@@ -2,7 +2,9 @@
 
 > **WIP:** This project is subject to major structural changes, it may break on any commit while I find a stable structure.
 
-![sacabox-logo](./assets/logo.png)
+<p align="center">
+  <img width=300 src="./assets/logo.png" />
+</p>
 
 A NixOS module that sets up [Incus](https://linuxcontainers.org/incus/) for fast, isolated
 development and operations environments. VMs and containers are declared in Nix, created on first
