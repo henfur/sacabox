@@ -1,5 +1,5 @@
 # Debian dev VM with one project directory shared in.   vm sh dev
-{ ... }:
+_:
 
 {
   services.sacabox.machines.dev = {

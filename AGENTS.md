@@ -24,6 +24,7 @@ templates.nix   built-in templates dev / agent / ops
 guest-nixos.nix generates configuration.nix and workstation-guest.nix pushed into NixOS guests
 cli.nix         the `vm` script (writeShellApplication, so shellcheck runs at build time)
 lib/cidr.nix    carves ranges out of a CIDR (used for the `internet` policy)
+ci/             check.sh runs all CI checks locally (.github/workflows/ci.yml calls it)
 apply.sh        update flake inputs, rebuild the host, then run `vm` for one machine
 examples/       sample machines directory, one subdirectory per machine
 ```
@@ -93,7 +94,8 @@ nix-instantiate --eval --strict -E 'let pkgs = import <nixpkgs> {};
   in builtins.attrNames m.config.services.sacabox.machines'
 ```
 
-Also evaluate the manifest in a real host configuration when you change `default.nix`,
+`./ci/check.sh` runs the same checks as CI (syntax, statix/deadnix lint, example eval, shellcheck,
+gitleaks); run it before finishing. Also evaluate the manifest in a real host configuration when you change `default.nix`,
 `machine.nix` or `options.nix`. Do not run `nixos-rebuild`, `apply.sh` or `vm` against the user's
 machine unless asked: they change the running system and create or modify VMs.
 

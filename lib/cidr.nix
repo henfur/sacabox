@@ -29,7 +29,7 @@ let
         half = r.size / 2;
         len = r.len + 1;
       in
-      subtract { inherit len; base = r.base; size = half; } h
+      subtract { inherit len; inherit (r) base; size = half; } h
       ++ subtract { inherit len; base = r.base + half; size = half; } h;
 in
 {

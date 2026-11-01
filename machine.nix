@@ -8,7 +8,7 @@
 { name, config, ... }:
 
 let
-  inherit (lib) mkOption mkIf mkMerge types optional optionalAttrs;
+  inherit (lib) mkOption types optional optionalAttrs;
 
   cidr = import ./lib/cidr.nix { inherit lib; };
   guest = import ./guest-nixos.nix { inherit lib pkgs; };
@@ -44,9 +44,9 @@ let
   gateway = lib.head (lib.splitString "/" hostCfg.network.subnet);
 
   rule = a:
-    { action = "allow"; destination = a.destination; state = "enabled"; }
+    { action = "allow"; inherit (a) destination; state = "enabled"; }
     // optionalAttrs (a.ports != null) { destination_port = a.ports; protocol = if a.protocol == null then "tcp" else a.protocol; }
-    // optionalAttrs (a.ports == null && a.protocol != null) { protocol = a.protocol; };
+    // optionalAttrs (a.ports == null && a.protocol != null) { inherit (a) protocol; };
 
   dnsRules = optional net.dns
     { action = "allow"; destination = "${gateway}/32"; destination_port = "53"; protocol = "udp"; state = "enabled"; }
@@ -322,7 +322,7 @@ in
         network = {
           inherit (net) policy;
           bridge = hostCfg.network.name;
-          acl = acl;
+          inherit acl;
         };
         cloudInit = if isNixos then null else pkgs.writeText "cloud-init-${name}" cloudInit;
         nixos = if !isNixos then null else guest.spec {
@@ -332,7 +332,7 @@ in
           inherit (config) shell;
         };
         init = initFile;
-        dotfiles = config.dotfiles;
+        inherit (config) dotfiles;
         home = homeActivation;
       };
 }
