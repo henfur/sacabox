@@ -2,8 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: [main]   # keep in sync with your protected branches
 
 permissions:
   contents: read
