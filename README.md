@@ -1,5 +1,7 @@
 # sacabox
 
+> **WIP:** This project is subject to major structural changes, it may break on any commit while I find a stable structure.
+
 A NixOS module that sets up [Incus](https://linuxcontainers.org/incus/) for fast, isolated
 development and operations environments. VMs and containers are declared in Nix, created on first
 use with `vm sh <name>`, and each one gets its own network and host-directory restrictions.
@@ -84,11 +86,14 @@ runs `vm provision`, `vm home` or `vm up` for that machine.
 
 ## Status
 
-Personal project, used day to day on NixOS. Expect rough edges.
+Work in progress personal project, used day to day on NixOS. Expect rough edges.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
 
 ## AI usage disclosure
 
 Large language model tools (Claude, via Claude Code) were used to help develop this project,
 including writing and refactoring code and documentation. I direct the design and review and test
-the result, but parts of the code were generated, so read it before running it on a machine you
-care about.
+the result, but parts of the code were generated.
