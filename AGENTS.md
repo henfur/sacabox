@@ -25,7 +25,6 @@ guest-nixos.nix generates configuration.nix and workstation-guest.nix pushed int
 cli.nix         the `sacabox` script (writeShellApplication, so shellcheck runs at build time)
 lib/cidr.nix    carves ranges out of a CIDR (used for the `internet` policy)
 ci/             check.sh runs all CI checks locally (.github/workflows/ci.yml calls it)
-apply.sh        update flake inputs, rebuild the host, then run `sacabox` for one machine
 examples/       sample machines directory, one subdirectory per machine
 ```
 
@@ -85,7 +84,7 @@ There is no test suite; verify by evaluating and building.
 ```sh
 # the shell script (runs shellcheck)
 nix-build --no-out-link -E 'let pkgs = import <nixpkgs> {}; in
-  import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { uiHost = "x"; terminal = { enable = true; package = pkgs.alacritty; }; }; incus = pkgs.incus; }'
+  import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { terminal = { enable = true; package = pkgs.alacritty; }; }; incus = pkgs.incus; }'
 
 # the module against the examples (no host config needed)
 nix-instantiate --eval --strict -E 'let pkgs = import <nixpkgs> {};
@@ -96,7 +95,7 @@ nix-instantiate --eval --strict -E 'let pkgs = import <nixpkgs> {};
 
 `./ci/check.sh` runs the same checks as CI (syntax, statix/deadnix lint, example eval, shellcheck,
 gitleaks); run it before finishing. Also evaluate the manifest in a real host configuration when you change `default.nix`,
-`machine.nix` or `options.nix`. Do not run `nixos-rebuild`, `apply.sh` or `sacabox` against the user's
+`machine.nix` or `options.nix`. Do not run `nixos-rebuild` or `sacabox` against the user's
 machine unless asked: they change the running system and create or modify VMs.
 
 ## Style

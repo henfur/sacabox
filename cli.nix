@@ -25,21 +25,18 @@ pkgs.writeShellApplication {
 
     usage() {
       cat <<'EOF2'
-    sacabox sh NAME [cmd...]   shell as your user (creates + starts the machine if needed)
+    sacabox sh NAME [cmd...]   shell as your user (creates + provisions the machine on first use)
     sacabox term NAME          same, in a dedicated terminal window (services.sacabox.terminal.enable)
-    sacabox up NAME            create / reconcile with the nix config, start, wait until ready
+    sacabox provision NAME     apply the config files to the machine, creating it if missing:
+                               refresh flake inputs + rebuild the host (services.sacabox.flake),
+                               then resources, shares, network policy, guest system, init, dotfiles,
+                               home. --no-rebuild skips the host rebuild.
     sacabox root NAME          root shell
-    sacabox ls                 machines (running and declared)
-    sacabox ip NAME            IPv4 address
-    sacabox reset NAME [snap]  roll back to snapshot (default: clean)
-    sacabox snap NAME [snap]   (re)take snapshot (default: clean)
-    sacabox provision NAME     re-run guest config (nixos-rebuild / init script / dotfiles) after editing it
-    sacabox dotfiles NAME      re-copy only the dotfiles
-    sacabox home NAME          re-activate only the Home Manager config
-    sacabox stop|start|rm NAME
+    sacabox ls                 machines (running and declared) with their IPs
+    sacabox reset NAME         roll back to the pristine `clean` snapshot taken after first provisioning
+    sacabox stop NAME
+    sacabox rm NAME            delete the machine and its network ACL
     sacabox tmp [TEMPLATE|MACHINE] [--ct]   throwaway machine from a template, deleted on exit
-    sacabox spec NAME          show the resolved spec
-    sacabox ui                 web UI URL
     EOF2
     }
 
@@ -200,8 +197,28 @@ pkgs.writeShellApplication {
         -- "$h/activate"
     }
 
+    # Refresh the configured flake inputs and rebuild the host so /etc/sacabox/machines.json is current.
+    rebuild() {
+      local fpath fhost lock inputs
+      fpath=$(jq -r '.flake.path // empty' "$manifest")
+      [ -n "$fpath" ] || return 0
+      fhost=$(jq -r '.flake.host' "$manifest")
+      mapfile -t inputs < <(jq -r '.flake.inputs[]' "$manifest")
+      if [ "''${#inputs[@]}" -gt 0 ]; then
+        lock=$(mktemp)
+        nix flake update "''${inputs[@]}" --flake "path:$fpath" --output-lock-file "$lock"
+        sudo cp "$lock" "$fpath/flake.lock"
+        rm -f "$lock"
+      fi
+      sudo nixos-rebuild switch --flake "$fpath#$fhost"
+    }
+
+    # Idempotent: creates the machine if needed, then makes it match the config in every respect.
     provision() {
-      local n=$1
+      local n=$1 fresh=0
+      exists "$n" || { fresh=1; create "$n"; }
+      apply_config "$n"
+      ensure_acl "$n"
       running "$n" || incus start "$n"
       wait_agent "$n"
       acl_detach "$n"
@@ -210,25 +227,10 @@ pkgs.writeShellApplication {
       apply_dotfiles "$n"
       apply_home "$n"
       acl_attach "$n"
-    }
-
-    bring_up() {
-      local n=$1 fresh=0
-      exists "$n" || { fresh=1; create "$n"; }
-      apply_config "$n"
-      ensure_acl "$n"
-      if [ "$fresh" = 1 ]; then
-        incus start "$n"
-        provision "$n"
-        if [ "$(q .snapshot)" = true ] && [ -z "''${VM_NO_SNAP:-}" ]; then
-          incus snapshot create "$n" clean >/dev/null
-        fi
-      else
-        running "$n" || incus start "$n"
-        wait_agent "$n"
-        acl_attach "$n"
+      if [ "$fresh" = 1 ] && [ "$(q .snapshot)" = true ] && [ -z "''${VM_NO_SNAP:-}" ]; then
+        incus snapshot create "$n" clean >/dev/null
       fi
-      echo "$n ready"
+      echo "$n provisioned"
     }
 
     # Full-width coloured bar (plain SGR, works in any terminal) + window title.
@@ -257,7 +259,7 @@ pkgs.writeShellApplication {
     ''}
     shell() {
       local n=$1; shift
-      if ! exists "$n"; then load_machine "$n"; bring_up "$n"; fi
+      if ! exists "$n"; then load_machine "$n"; provision "$n"; fi
       running "$n" || { incus start "$n"; wait_agent "$n"; }
       # no command: the user's own login shell (fish, zsh, ...)
       # shellcheck disable=SC2016
@@ -274,27 +276,27 @@ pkgs.writeShellApplication {
 
     cmd=''${1:-help}; shift || true
     case $cmd in
-      sh)        [ $# -ge 1 ] || { usage; exit 2; }; shell "$@" ;;
-      ${lib.optionalString cfg.terminal.enable ''term)      [ $# -eq 1 ] || { usage; exit 2; }; term "$1" ;;''}
-      up)        [ $# -eq 1 ] || { usage; exit 2; }; load_machine "$1"; bring_up "$1" ;;
-      provision) load_machine "$1"; exists "$1" || die "$1 does not exist yet (sacabox up $1)"
-                 apply_config "$1"; ensure_acl "$1"; provision "$1" ;;
-      dotfiles)  load_machine "$1"; exists "$1" || die "$1 does not exist yet (sacabox up $1)"; apply_dotfiles "$1" ;;
-      home)      load_machine "$1"; exists "$1" || die "$1 does not exist yet (sacabox up $1)"
-                 running "$1" || { incus start "$1"; wait_agent "$1"; }; apply_home "$1" ;;
-      root)      exists "$1" || { load_machine "$1"; bring_up "$1"; }
+      sh|term|provision|root|reset|stop|rm) [ $# -ge 1 ] || { usage; exit 2; } ;;
+    esac
+
+    case $cmd in
+      sh)        shell "$@" ;;
+      ${lib.optionalString cfg.terminal.enable ''term)      term "$1" ;;''}
+      provision) load_machine "$1"
+                 if [ "''${2:-}" != --no-rebuild ] && [ -n "$(jq -r '.flake.path // empty' "$manifest")" ]; then
+                   rebuild
+                   # the rebuild may have replaced this very script: continue with the new one
+                   exec /run/current-system/sw/bin/sacabox provision "$1" --no-rebuild
+                 fi
+                 provision "$1" ;;
+      root)      exists "$1" || { load_machine "$1"; provision "$1"; }
                  # shellcheck disable=SC2016
                  exec incus exec "$1" --env PATH="$gpath" -- sh -c 'exec "$(command -v bash || echo sh)" -l' ;;
       ls)        incus list -c ntsS4
                  echo; echo "declared: $(jq -r '.machines|keys|join(" ")' "$manifest")  |  templates: $(jq -r '.templates|keys|join(" ")' "$manifest")" ;;
-      ip)        incus list "^$1\$" -f csv -c 4 | cut -d' ' -f1 ;;
-      reset)     incus snapshot restore "$1" "''${2:-clean}"; running "$1" || incus start "$1" ;;
-      snap)      incus snapshot delete "$1" "''${2:-clean}" 2>/dev/null || true
-                 incus snapshot create "$1" "''${2:-clean}" ;;
+      reset)     incus snapshot restore "$1" clean; running "$1" || incus start "$1" ;;
       stop)      incus stop "$1" ;;
-      start)     incus start "$1" ;;
       rm)        incus delete -f "$1"; incus network acl delete "ws-$1" 2>/dev/null || true ;;
-      spec)      load_machine "$1"; echo "$spec" | jq . ;;
       tmp)       t=dev; ct=
                  for a in "$@"; do case $a in --ct) ct=1 ;; *) t=$a ;; esac; done
                  name="tmp-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
@@ -305,9 +307,8 @@ pkgs.writeShellApplication {
                  fi
                  [ -z "$ct" ] || spec=$(jq '.type = "container"' <<<"$spec")
                  trap 'incus delete -f "$name" >/dev/null 2>&1; incus network acl delete "ws-$name" >/dev/null 2>&1 || true' EXIT
-                 VM_NO_SNAP=1 bring_up "$name"
+                 VM_NO_SNAP=1 provision "$name"
                  (shell "$name") || true ;;
-      ui)        echo "https://${cfg.uiHost}:8443  (or: incus webui)" ;;
       help|-h|--help) usage ;;
       *)         usage; exit 2 ;;
     esac

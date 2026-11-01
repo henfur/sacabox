@@ -280,7 +280,7 @@ in
         description = ''
           Home Manager modules for the guest user, evaluated on the HOST (so relative paths
           and flake inputs just work) and activated in the guest with `sacabox provision` /
-          `sacabox home`. NixOS guests only. Don't mix with `dotfiles` on the same paths.
+          `sacabox provision`. NixOS guests only. Don't mix with `dotfiles` on the same paths.
         '';
       };
       extraSpecialArgs = mkOption {
@@ -303,7 +303,7 @@ in
       description = ''
         Directory whose contents are copied into the guest user's home after provisioning
         (so `<dir>/.config/fish/config.fish` becomes `~/.config/fish/config.fish`).
-        Files are overwritten on `sacabox provision` / `sacabox dotfiles`; anything else in $HOME
+        Files are overwritten on `sacabox provision`; anything else in $HOME
         (e.g. ssh keys generated in the guest) is left alone. It is copied into the nix
         store: never put secrets in it.
       '';

@@ -2,6 +2,8 @@
 
 > **WIP:** This project is subject to major structural changes, it may break on any commit while I find a stable structure.
 
+![sacabox-logo](./assets/logo.png)
+
 A NixOS module that sets up [Incus](https://linuxcontainers.org/incus/) for fast, isolated
 development and operations environments. VMs and containers are declared in Nix, created on first
 use with `sacabox sh <name>`, and each one gets its own network and host-directory restrictions.
@@ -26,8 +28,7 @@ holds the keys for production access.
   e.g. a distinct background colour) that drops you into the
   machine, and each machine gets a launcher entry ("VM: NAME") for rofi, the COSMIC launcher and
   other desktop launchers.
-- **A small CLI**, `sacabox`: `sh`, `term`, `up`, `provision`, `home`, `root`, `ls`, `ip`, `snap`, `reset`,
-  `stop`, `start`, `rm`, `tmp`.
+- **A small CLI**, `sacabox`: `sh`, `term`, `provision`, `root`, `ls`, `reset`, `stop`, `rm`, `tmp`.
 
 ## Layout
 
@@ -40,7 +41,6 @@ guest-nixos.nix      files generated for NixOS guests
 cli.nix              the `sacabox` command
 lib/                 helpers
 examples/            sample machines directory (copy it to your own repo)
-apply.sh             update flake inputs, rebuild the host, then provision a machine
 ```
 
 Keep your real machines in a separate directory or repo and import it next to the module.
@@ -81,13 +81,23 @@ Declare a machine in `machines/dev/default.nix`:
 Then:
 
 ```
-sacabox sh dev          # create, start and enter
+sacabox sh dev          # create, provision and enter
 sacabox ls              # running and declared machines
-./apply.sh dev     # after editing the machine's config
+sacabox provision dev   # after editing the machine's config
 ```
 
-`apply.sh MACHINE [provision|home|up]` refreshes the flake inputs and rebuilds the host. It then
-runs `sacabox provision`, `sacabox home` or `sacabox up` for that machine.
+`sacabox provision NAME` makes the machine match your config files. If `services.sacabox.flake`
+is set, it first refreshes the listed flake inputs and rebuilds the host, so the new definitions
+are in place. It then re-applies everything (resources, shares, network policy, guest system, init
+script, dotfiles, Home Manager) and is safe to run repeatedly. `--no-rebuild` skips the host
+rebuild.
+
+```nix
+services.sacabox.flake = {
+  path = "/etc/nixos";
+  inputs = [ "sacabox" "machines" "dotfiles" ];   # refreshed before each rebuild
+};
+```
 
 ## Status
 

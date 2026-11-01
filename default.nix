@@ -21,6 +21,7 @@ let
   manifest = {
     inherit (cfg) user;
     home = "/home/${cfg.user}";
+    flake = { inherit (cfg.flake) path host inputs; };
     machines = lib.mapAttrs (_: m: m.spec) cfg.machines;
     templates = lib.mapAttrs evalTemplate cfg.templates;
   };

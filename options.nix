@@ -90,7 +90,7 @@ in
     machines = mkOption {
       type = types.attrsOf (types.submodule (import ./machine.nix { inherit lib pkgs; hostCfg = cfg; }));
       default = { };
-      description = "Declared machines. One directory per machine (see examples/). Created lazily by `sacabox up <name>` / `sacabox sh <name>`.";
+      description = "Declared machines. One directory per machine (see examples/). Created lazily by `sacabox provision <name>` / `sacabox sh <name>`.";
     };
 
     terminal = {
@@ -109,7 +109,29 @@ in
       };
     };
 
+    flake = {
+      path = mkOption {
+        type = types.nullOr types.str; default = null;
+        example = "/etc/nixos";
+        description = ''
+          The flake that builds this host. When set, `sacabox provision NAME` first refreshes
+          `flake.inputs`, rebuilds the host from it (`sudo nixos-rebuild switch`) and then applies
+          the machine, so editing a config file and running one command is enough. null = provision
+          only applies what the last host build already contains.
+        '';
+      };
+      host = mkOption {
+        type = types.str; default = config.networking.hostName;
+        defaultText = lib.literalExpression "config.networking.hostName";
+        description = "nixosConfigurations name to rebuild.";
+      };
+      inputs = mkOption {
+        type = types.listOf types.str; default = [ ];
+        example = [ "sacabox" "machines" "dotfiles" ];
+        description = "Flake inputs to refresh before rebuilding: this module, your machines directory, dotfiles, ...";
+      };
+    };
+
     ui = mkOption { type = types.bool; default = true; description = "Incus web UI."; };
-    uiHost = mkOption { type = types.str; default = "localhost"; description = "Host shown by `sacabox ui`."; };
   };
 }
