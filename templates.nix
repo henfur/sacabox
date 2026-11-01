@@ -10,6 +10,7 @@
       resources = { cpu = 4; memory = "8GiB"; disk = "40GiB"; };
       nesting = true;
       color = "#1f5fbf";
+      terminal.settings.colors.primary.background = "#10182b";
       network.policy = "open";
     };
 
@@ -20,6 +21,7 @@
       network.policy = "internet";
       sshAgent = false;
       color = "#2e7d32";
+      terminal.settings.colors.primary.background = "#102416";
     };
 
     # Production access: small, gets your ssh-agent, nothing from the host filesystem.
@@ -29,6 +31,7 @@
       network.policy = "open";
       sshAgent = true;
       color = "#b3261e";
+      terminal.settings.colors.primary.background = "#2b1212";
     };
   };
 }

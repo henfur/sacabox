@@ -19,4 +19,4 @@ sudo cp "$lock" /etc/nixos/flake.lock
 rm -f "$lock"
 
 sudo nixos-rebuild switch --flake "/etc/nixos#$host"
-vm "$action" "$machine"
+sacabox "$action" "$machine"

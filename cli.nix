@@ -1,9 +1,9 @@
-# The `vm` command. Everything declarative comes from /etc/sacabox/machines.json
+# The `sacabox` command. Everything declarative comes from /etc/sacabox/machines.json
 # (generated from services.sacabox.machines / templates); this script only reconciles Incus with it.
 { lib, pkgs, cfg, incus }:
 
 pkgs.writeShellApplication {
-  name = "vm";
+  name = "sacabox";
   runtimeInputs = [ incus pkgs.jq pkgs.nix pkgs.coreutils pkgs.gnused pkgs.gnugrep ];
   text = ''
     manifest=/etc/sacabox/machines.json
@@ -13,7 +13,7 @@ pkgs.writeShellApplication {
     # incus exec starts with a minimal PATH; NixOS guests keep their tools elsewhere
     gpath=/run/wrappers/bin:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
 
-    die() { echo "vm: $*" >&2; exit 1; }
+    die() { echo "sacabox: $*" >&2; exit 1; }
     q() { jq -r "$1" <<<"$spec"; }
     exists() { incus info "$1" >/dev/null 2>&1; }
     running() { [ "$(incus list "^$1\$" -f csv -c s)" = RUNNING ]; }
@@ -25,20 +25,21 @@ pkgs.writeShellApplication {
 
     usage() {
       cat <<'EOF2'
-    vm sh NAME [cmd...]   shell as your user (creates + starts the machine if needed)
-    vm up NAME            create / reconcile with the nix config, start, wait until ready
-    vm root NAME          root shell
-    vm ls                 machines (running and declared)
-    vm ip NAME            IPv4 address
-    vm reset NAME [snap]  roll back to snapshot (default: clean)
-    vm snap NAME [snap]   (re)take snapshot (default: clean)
-    vm provision NAME     re-run guest config (nixos-rebuild / init script / dotfiles) after editing it
-    vm dotfiles NAME      re-copy only the dotfiles
-    vm home NAME          re-activate only the Home Manager config
-    vm stop|start|rm NAME
-    vm tmp [TEMPLATE|MACHINE] [--ct]   throwaway machine from a template, deleted on exit
-    vm spec NAME          show the resolved spec
-    vm ui                 web UI URL
+    sacabox sh NAME [cmd...]   shell as your user (creates + starts the machine if needed)
+    sacabox term NAME          same, in a dedicated terminal window (services.sacabox.terminal.enable)
+    sacabox up NAME            create / reconcile with the nix config, start, wait until ready
+    sacabox root NAME          root shell
+    sacabox ls                 machines (running and declared)
+    sacabox ip NAME            IPv4 address
+    sacabox reset NAME [snap]  roll back to snapshot (default: clean)
+    sacabox snap NAME [snap]   (re)take snapshot (default: clean)
+    sacabox provision NAME     re-run guest config (nixos-rebuild / init script / dotfiles) after editing it
+    sacabox dotfiles NAME      re-copy only the dotfiles
+    sacabox home NAME          re-activate only the Home Manager config
+    sacabox stop|start|rm NAME
+    sacabox tmp [TEMPLATE|MACHINE] [--ct]   throwaway machine from a template, deleted on exit
+    sacabox spec NAME          show the resolved spec
+    sacabox ui                 web UI URL
     EOF2
     }
 
@@ -62,7 +63,7 @@ pkgs.writeShellApplication {
     ensure_acl() {
       has_acl || return 0
       incus network acl show "ws-$1" >/dev/null 2>&1 || incus network acl create "ws-$1" >/dev/null
-      q '.network.acl | {description: "managed by vm", egress, ingress}' | incus network acl edit "ws-$1"
+      q '.network.acl | {description: "managed by sacabox", egress, ingress}' | incus network acl edit "ws-$1"
     }
 
     acl_attach() {
@@ -107,7 +108,7 @@ pkgs.writeShellApplication {
       local n=$1 want s sn src dst ro
       incus config set "$n" "limits.cpu=$(q .cpu)" "limits.memory=$(q .memory)"
       incus config device set "$n" root "size=$(q .disk)" 2>/dev/null \
-        || echo "vm: warning: could not resize root disk of $n (shrinking is not supported)" >&2
+        || echo "sacabox: warning: could not resize root disk of $n (shrinking is not supported)" >&2
 
       want=$(q '.shares[].name')
       for s in $(incus config device list "$n" | grep '^ws-share-' || true); do
@@ -134,7 +135,7 @@ pkgs.writeShellApplication {
             listen=unix:/run/ssh-agent.sock "connect=unix:$SSH_AUTH_SOCK" bind=instance \
             uid=1000 gid=1000 mode=0600 "security.uid=$(id -u)" "security.gid=$(id -g)"
         else
-          echo "vm: warning: sshAgent wanted but no SSH_AUTH_SOCK in this shell; skipping" >&2
+          echo "sacabox: warning: sshAgent wanted but no SSH_AUTH_SOCK in this shell; skipping" >&2
         fi
       fi
     }
@@ -239,6 +240,21 @@ pkgs.writeShellApplication {
         $((16#''${hex:0:2})) $((16#''${hex:2:2})) $((16#''${hex:4:2})) "$cols" "$text"
     }
 
+    ${lib.optionalString cfg.terminal.enable ''
+    # Dedicated window: own class (for WM rules / launcher matching) and the machine's alacritty settings.
+    term() {
+      local opt args=(--class "sacabox,sacabox-$1" --title "$1"); load_machine "$1"
+      # settings attrset -> `-o a.b.c=<toml value>` (JSON scalars/arrays are valid TOML values)
+      # shellcheck disable=SC2016
+      while IFS= read -r opt; do args+=(-o "$opt"); done < <(q '
+        def flat($p): to_entries[] | .key as $k | .value
+          | if type == "object" then flat($p + [$k]) else "\($p + [$k] | join("."))=\(tojson)" end;
+        (.terminal.settings // {}) | flat([])')
+      # shellcheck disable=SC2016
+      SACABOX_TERM=1 setsid -f ${cfg.terminal.package}/bin/alacritty "''${args[@]}" \
+        -e sh -c 'sacabox sh "$1" || { printf "\n[sacabox sh failed, press enter to close] "; read -r _; }' sh "$1"
+    }
+    ''}
     shell() {
       local n=$1; shift
       if ! exists "$n"; then load_machine "$n"; bring_up "$n"; fi
@@ -247,7 +263,7 @@ pkgs.writeShellApplication {
       # shellcheck disable=SC2016
       if [ $# -eq 0 ]; then set -- sh -c 'exec "$(getent passwd 1000 | cut -d: -f7)" -l'; fi
       local color; color=$(jq -r --arg n "$n" '.machines[$n].color // empty' "$manifest")
-      if [ -t 1 ] && [ -n "$color" ]; then
+      if [ -t 1 ] && [ -n "$color" ] && [ -z "''${SACABOX_TERM:-}" ]; then
         banner "$n" "$color" "enter"
         trap 'banner "$n" "$color" "leave"' EXIT
       fi
@@ -259,11 +275,12 @@ pkgs.writeShellApplication {
     cmd=''${1:-help}; shift || true
     case $cmd in
       sh)        [ $# -ge 1 ] || { usage; exit 2; }; shell "$@" ;;
+      ${lib.optionalString cfg.terminal.enable ''term)      [ $# -eq 1 ] || { usage; exit 2; }; term "$1" ;;''}
       up)        [ $# -eq 1 ] || { usage; exit 2; }; load_machine "$1"; bring_up "$1" ;;
-      provision) load_machine "$1"; exists "$1" || die "$1 does not exist yet (vm up $1)"
+      provision) load_machine "$1"; exists "$1" || die "$1 does not exist yet (sacabox up $1)"
                  apply_config "$1"; ensure_acl "$1"; provision "$1" ;;
-      dotfiles)  load_machine "$1"; exists "$1" || die "$1 does not exist yet (vm up $1)"; apply_dotfiles "$1" ;;
-      home)      load_machine "$1"; exists "$1" || die "$1 does not exist yet (vm up $1)"
+      dotfiles)  load_machine "$1"; exists "$1" || die "$1 does not exist yet (sacabox up $1)"; apply_dotfiles "$1" ;;
+      home)      load_machine "$1"; exists "$1" || die "$1 does not exist yet (sacabox up $1)"
                  running "$1" || { incus start "$1"; wait_agent "$1"; }; apply_home "$1" ;;
       root)      exists "$1" || { load_machine "$1"; bring_up "$1"; }
                  # shellcheck disable=SC2016

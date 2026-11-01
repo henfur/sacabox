@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for coding agents working on sacabox: a NixOS module plus a `vm` CLI that manage Incus
+Guidance for coding agents working on sacabox: a NixOS module plus a `sacabox` CLI that manage Incus
 VMs/containers declared in Nix. Read `README.md` first for the user-facing picture. This file
 covers how the code fits together and what to avoid.
 
@@ -17,20 +17,20 @@ here, and it must stay generic.
 ## Architecture
 
 ```
-default.nix     entry: assertions, Incus preseed, writes /etc/sacabox/machines.json, installs `vm`
+default.nix     entry: assertions, Incus preseed, writes /etc/sacabox/machines.json, installs `sacabox`
 options.nix     host options under services.sacabox.*
 machine.nix     per-machine submodule (also the schema for templates) + read-only `spec`
 templates.nix   built-in templates dev / agent / ops
 guest-nixos.nix generates configuration.nix and workstation-guest.nix pushed into NixOS guests
-cli.nix         the `vm` script (writeShellApplication, so shellcheck runs at build time)
+cli.nix         the `sacabox` script (writeShellApplication, so shellcheck runs at build time)
 lib/cidr.nix    carves ranges out of a CIDR (used for the `internet` policy)
 ci/             check.sh runs all CI checks locally (.github/workflows/ci.yml calls it)
-apply.sh        update flake inputs, rebuild the host, then run `vm` for one machine
+apply.sh        update flake inputs, rebuild the host, then run `sacabox` for one machine
 examples/       sample machines directory, one subdirectory per machine
 ```
 
 Data flow: Nix options -> `machines.<name>.spec` -> JSON manifest at `/etc/sacabox/machines.json`
--> `vm` reads it with `jq` and reconciles Incus. **All declarative state goes through the
+-> `sacabox` reads it with `jq` and reconciles Incus. **All declarative state goes through the
 manifest.** The CLI must not re-derive anything the Nix side can compute, and the Nix side must not
 call Incus.
 
@@ -61,7 +61,7 @@ per-machine opt-in. Say plainly in your summary when a change touches any of the
   expose them in `spec`.
 - **Network policies are pure allow-lists** (`open`, `internet`, `allowlist`, `none`). Don't rely on
   Incus's drop/allow rule ordering. The ACL is detached while provisioning and reattached after.
-- **`vm` is a Nix string containing shell.** Escape `${` as `''${`, keep heredoc delimiters unique,
+- **`sacabox` is a Nix string containing shell.** Escape `${` as `''${`, keep heredoc delimiters unique,
   and write escapes such as `\e` and `\a` as `\\e`, `\\a` in the Nix source. The build runs
   shellcheck: fix warnings or add a narrow `# shellcheck disable=...` with a reason.
 - **`incus exec` has a minimal PATH.** Commands run in guests need the `gpath` constant (or
@@ -85,7 +85,7 @@ There is no test suite; verify by evaluating and building.
 ```sh
 # the shell script (runs shellcheck)
 nix-build --no-out-link -E 'let pkgs = import <nixpkgs> {}; in
-  import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { uiHost = "x"; }; incus = pkgs.incus; }'
+  import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { uiHost = "x"; terminal = { enable = true; package = pkgs.alacritty; }; }; incus = pkgs.incus; }'
 
 # the module against the examples (no host config needed)
 nix-instantiate --eval --strict -E 'let pkgs = import <nixpkgs> {};
@@ -96,7 +96,7 @@ nix-instantiate --eval --strict -E 'let pkgs = import <nixpkgs> {};
 
 `./ci/check.sh` runs the same checks as CI (syntax, statix/deadnix lint, example eval, shellcheck,
 gitleaks); run it before finishing. Also evaluate the manifest in a real host configuration when you change `default.nix`,
-`machine.nix` or `options.nix`. Do not run `nixos-rebuild`, `apply.sh` or `vm` against the user's
+`machine.nix` or `options.nix`. Do not run `nixos-rebuild`, `apply.sh` or `sacabox` against the user's
 machine unless asked: they change the running system and create or modify VMs.
 
 ## Style

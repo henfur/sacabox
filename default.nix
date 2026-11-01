@@ -4,7 +4,7 @@
 #   services.sacabox = { enable = true; user = "you"; sshKeys = [ "ssh-ed25519 ..." ]; };
 #
 # Machines live outside this module (see ./examples): import a directory of modules that
-# set `services.sacabox.machines.<name>`, then `vm sh <name>` (creates on first use).
+# set `services.sacabox.machines.<name>`, then `sacabox sh <name>` (creates on first use).
 { config, lib, pkgs, ... }:
 
 let
@@ -25,7 +25,7 @@ let
     templates = lib.mapAttrs evalTemplate cfg.templates;
   };
 
-  vm = import ./cli.nix { inherit lib pkgs cfg; incus = config.virtualisation.incus.package; };
+  cli = import ./cli.nix { inherit lib pkgs cfg; incus = config.virtualisation.incus.package; };
 
   underRoot = root: p: p == root || lib.hasPrefix (root + "/") p;
 in
@@ -74,7 +74,7 @@ in
           config = lib.optionalAttrs (cfg.storage.source != null) { source = cfg.storage.source; };
         }];
 
-        # Deliberately bare: everything machine-specific is set per instance by `vm`.
+        # Deliberately bare: everything machine-specific is set per instance by `sacabox`.
         profiles = [{
           name = "default";
           description = "root disk + bridge";
@@ -87,7 +87,19 @@ in
     };
 
     environment.etc."sacabox/machines.json".text = builtins.toJSON manifest;
-    environment.systemPackages = [ vm ];
+    environment.systemPackages = [ cli ] ++ lib.optionals cfg.terminal.enable (
+      [ cfg.terminal.package ]
+      ++ lib.mapAttrsToList
+        (n: _: pkgs.makeDesktopItem {
+          name = "sacabox-${n}";
+          desktopName = "VM: ${n}";
+          comment = "Open a terminal inside the ${n} machine";
+          exec = "${cli}/bin/sacabox term ${n}";
+          icon = "utilities-terminal";
+          categories = [ "System" ];
+          startupWMClass = "sacabox-${n}";
+        })
+        cfg.machines);
 
     users.users.${cfg.user}.extraGroups = [ "incus-admin" ];
     # Containers sharing host dirs map host uid/gid 1000 straight through (raw.idmap "both 1000 1000").

@@ -1,4 +1,4 @@
-# Debian dev VM with one project directory shared in.   vm sh dev
+# Debian dev VM with one project directory shared in.   sacabox sh dev
 _:
 
 {

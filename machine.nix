@@ -2,7 +2,7 @@
 # (and for each template, which is just a partial machine).
 #
 # Besides the user-facing options, every machine gets a read-only `spec`: the
-# fully-resolved JSON document the `vm` CLI consumes (see cli.nix).
+# fully-resolved JSON document the `sacabox` CLI consumes (see cli.nix).
 { lib, pkgs, hostCfg }:
 
 { name, config, ... }:
@@ -168,13 +168,24 @@ in
 
     snapshot = mkOption {
       type = types.bool; default = d [ "snapshot" ] true;
-      description = "Take a pristine `clean` snapshot after first provisioning (`vm reset` rolls back to it).";
+      description = "Take a pristine `clean` snapshot after first provisioning (`sacabox reset` rolls back to it).";
     };
 
     color = mkOption {
       type = types.nullOr types.str; default = d [ "color" ] null;
       example = "#b3261e";
-      description = "Colour (#rrggbb) of the banner `vm sh` prints when entering/leaving the machine, and of nothing else; null = no banner.";
+      description = "Colour (#rrggbb) of the banner `sacabox sh` prints when entering/leaving the machine, and of nothing else; null = no banner.";
+    };
+
+    terminal.settings = mkOption {
+      type = types.attrs; default = { };
+      example = { colors.primary.background = "#2b1212"; font.size = 11.5; window.opacity = 0.95; };
+      description = ''
+        Alacritty settings for the dedicated window opened by `sacabox term`, as a nested
+        attrset in alacritty.toml's shape (each leaf becomes an `-o key=value` override on top
+        of your own config). Merged over the template's settings, so a machine only states
+        what differs. Typical use: a distinct background so the machine is recognisable.
+      '';
     };
 
     nesting = mkOption {
@@ -268,8 +279,8 @@ in
         example = lib.literalExpression "inputs.dotfiles.homeModules.terminal";
         description = ''
           Home Manager modules for the guest user, evaluated on the HOST (so relative paths
-          and flake inputs just work) and activated in the guest with `vm provision` /
-          `vm home`. NixOS guests only. Don't mix with `dotfiles` on the same paths.
+          and flake inputs just work) and activated in the guest with `sacabox provision` /
+          `sacabox home`. NixOS guests only. Don't mix with `dotfiles` on the same paths.
         '';
       };
       extraSpecialArgs = mkOption {
@@ -292,7 +303,7 @@ in
       description = ''
         Directory whose contents are copied into the guest user's home after provisioning
         (so `<dir>/.config/fish/config.fish` becomes `~/.config/fish/config.fish`).
-        Files are overwritten on `vm provision` / `vm dotfiles`; anything else in $HOME
+        Files are overwritten on `sacabox provision` / `sacabox dotfiles`; anything else in $HOME
         (e.g. ssh keys generated in the guest) is left alone. It is copied into the nix
         store: never put secrets in it.
       '';
@@ -305,7 +316,7 @@ in
 
     spec = mkOption {
       type = types.attrs; readOnly = true; internal = true;
-      description = "Resolved machine description consumed by `vm`.";
+      description = "Resolved machine description consumed by `sacabox`.";
     };
   };
 
@@ -331,6 +342,7 @@ in
           inherit (config.nixos) modules channel;
           inherit (config) shell;
         };
+        terminal.settings = lib.recursiveUpdate (d [ "terminal" "settings" ] { }) config.terminal.settings;
         init = initFile;
         inherit (config) dotfiles;
         home = homeActivation;

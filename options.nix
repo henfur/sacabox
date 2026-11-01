@@ -82,7 +82,7 @@ in
       default = { };
       description = ''
         Reusable partial machines (any machine option). A machine picks one with
-        `template = "name"` and overrides what it likes. Also usable ad hoc: `vm tmp <template>`.
+        `template = "name"` and overrides what it likes. Also usable ad hoc: `sacabox tmp <template>`.
         Built-ins (dev, agent, ops) live in templates.nix; redefine a name to replace it.
       '';
     };
@@ -90,10 +90,26 @@ in
     machines = mkOption {
       type = types.attrsOf (types.submodule (import ./machine.nix { inherit lib pkgs; hostCfg = cfg; }));
       default = { };
-      description = "Declared machines. One directory per machine (see examples/). Created lazily by `vm up <name>` / `vm sh <name>`.";
+      description = "Declared machines. One directory per machine (see examples/). Created lazily by `sacabox up <name>` / `sacabox sh <name>`.";
+    };
+
+    terminal = {
+      enable = mkOption {
+        type = types.bool; default = false;
+        description = ''
+          Terminal windows: `sacabox term NAME` opens a dedicated terminal window for a machine, and
+          every declared machine gets a launcher entry ("VM: NAME", visible in rofi drun and
+          other desktop launchers) that runs it.
+        '';
+      };
+      package = mkOption {
+        type = types.package; default = pkgs.alacritty;
+        defaultText = lib.literalExpression "pkgs.alacritty";
+        description = "Terminal used by `sacabox term`. Must be alacritty or accept its `--class`, `--title`, `-o` and `-e` flags (the binary is expected at bin/alacritty).";
+      };
     };
 
     ui = mkOption { type = types.bool; default = true; description = "Incus web UI."; };
-    uiHost = mkOption { type = types.str; default = "localhost"; description = "Host shown by `vm ui`."; };
+    uiHost = mkOption { type = types.str; default = "localhost"; description = "Host shown by `sacabox ui`."; };
   };
 }

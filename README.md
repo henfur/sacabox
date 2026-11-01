@@ -4,7 +4,7 @@
 
 A NixOS module that sets up [Incus](https://linuxcontainers.org/incus/) for fast, isolated
 development and operations environments. VMs and containers are declared in Nix, created on first
-use with `vm sh <name>`, and each one gets its own network and host-directory restrictions.
+use with `sacabox sh <name>`, and each one gets its own network and host-directory restrictions.
 
 Typical uses: a dev box per project, a sandbox for AI coding agents, a locked-down machine that
 holds the keys for production access.
@@ -21,7 +21,12 @@ holds the keys for production access.
   `allowedShareRoots`. The host ssh-agent is forwarded only when `sshAgent = true`.
 - **Home Manager in the guest.** Modules from your own flake are built on the host and activated in
   the VM over the Incus agent, so they work even while the network is locked down.
-- **A small CLI**, `vm`: `sh`, `up`, `provision`, `home`, `root`, `ls`, `ip`, `snap`, `reset`,
+- **Dedicated terminal windows** (optional). With `services.sacabox.terminal.enable`, `sacabox term NAME`
+  opens an alacritty window with its own class and per-machine settings (`terminal.settings`,
+  e.g. a distinct background colour) that drops you into the
+  machine, and each machine gets a launcher entry ("VM: NAME") for rofi, the COSMIC launcher and
+  other desktop launchers.
+- **A small CLI**, `sacabox`: `sh`, `term`, `up`, `provision`, `home`, `root`, `ls`, `ip`, `snap`, `reset`,
   `stop`, `start`, `rm`, `tmp`.
 
 ## Layout
@@ -32,7 +37,7 @@ options.nix          host options
 machine.nix          per-machine options
 templates.nix        built-in templates
 guest-nixos.nix      files generated for NixOS guests
-cli.nix              the `vm` command
+cli.nix              the `sacabox` command
 lib/                 helpers
 examples/            sample machines directory (copy it to your own repo)
 apply.sh             update flake inputs, rebuild the host, then provision a machine
@@ -76,13 +81,13 @@ Declare a machine in `machines/dev/default.nix`:
 Then:
 
 ```
-vm sh dev          # create, start and enter
-vm ls              # running and declared machines
+sacabox sh dev          # create, start and enter
+sacabox ls              # running and declared machines
 ./apply.sh dev     # after editing the machine's config
 ```
 
 `apply.sh MACHINE [provision|home|up]` refreshes the flake inputs and rebuilds the host. It then
-runs `vm provision`, `vm home` or `vm up` for that machine.
+runs `sacabox provision`, `sacabox home` or `sacabox up` for that machine.
 
 ## Status
 

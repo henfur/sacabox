@@ -1,4 +1,4 @@
-# Ops box: only the public internet (plus listed ranges), no host files, own ssh-agent.   vm sh ops
+# Ops box: only the public internet (plus listed ranges), no host files, own ssh-agent.   sacabox sh ops
 { inputs, ... }:
 
 {

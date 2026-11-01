@@ -28,10 +28,10 @@ eval_examples() {
 }
 
 shell() {
-  # building the vm script runs shellcheck (writeShellApplication)
+  # building the sacabox script runs shellcheck (writeShellApplication)
   nix-build --no-out-link -I "nixpkgs=$nixpkgs" -E '
     let pkgs = import <nixpkgs> {}; in
-    import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { uiHost = "x"; }; incus = pkgs.incus; }' >/dev/null
+    import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { uiHost = "x"; terminal = { enable = true; package = pkgs.alacritty; }; }; incus = pkgs.incus; }' >/dev/null
   nix_shell shellcheck shellcheck apply.sh ci/check.sh
 }
 

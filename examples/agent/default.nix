@@ -1,4 +1,4 @@
-# Sandbox for AI coding agents: NixOS inside, internet only, one scratch dir.   vm sh agent
+# Sandbox for AI coding agents: NixOS inside, internet only, one scratch dir.   sacabox sh agent
 _:
 
 {
