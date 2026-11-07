@@ -48,6 +48,13 @@ in
     network = {
       name = mkOption { type = types.str; default = "incusbr0"; description = "Bridge machines attach to."; };
       subnet = mkOption { type = types.str; default = "10.88.0.1/24"; description = "Bridge address (host side / gateway)."; };
+      restricted = {
+        name = mkOption {
+          type = types.str; default = "incusbr1";
+          description = "Bridge for `internet` and `allowlist` machines. The host answers no DNS on it and accepts only DHCP from it.";
+        };
+        subnet = mkOption { type = types.str; default = "10.89.0.1/24"; description = "Restricted bridge address (host side / gateway)."; };
+      };
     };
 
     allowedShareRoots = mkOption {
@@ -129,6 +136,24 @@ in
         type = types.listOf types.str; default = [ ];
         example = [ "sacabox" "machines" "dotfiles" ];
         description = "Flake inputs to refresh before rebuilding: this module, your machines directory, dotfiles, ...";
+      };
+    };
+
+    nftables = {
+      exclusive = mkOption {
+        type = types.bool; default = true;
+        description = ''
+          Make the kernel's nftables ruleset match the configuration on every switch: delete every
+          table that isn't declared in `networking.nftables.tables`, owned by Incus (tables named
+          `incus`) or listed in `nftables.keep`, and reload the declared ones (dropping rules added
+          to them by hand). Incus's own tables are left alone, since guests' network policies live
+          there. Incompatible with a raw `networking.nftables.ruleset`; declare tables instead.
+        '';
+      };
+      keep = mkOption {
+        type = types.listOf types.str; default = [ ];
+        example = [ "inet tailscale" ];
+        description = ''"family name" of other tables to keep, for tools that manage their own (Tailscale, Docker, ...).'';
       };
     };
 

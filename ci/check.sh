@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Static checks, runnable locally and in CI: ./ci/check.sh [syntax|lint|eval|shell|secrets]
+# Static checks, runnable locally and in CI: ./ci/check.sh [syntax|lint|eval|go|shell|secrets]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -27,11 +27,19 @@ eval_examples() {
     in builtins.attrNames m.config.services.sacabox.machines' >/dev/null
 }
 
-shell() {
-  # building the sacabox script runs shellcheck (writeShellApplication)
+go_checks() {
+  local unformatted
+  unformatted=$(nix_shell go gofmt -l cmd internal)
+  [ -z "$unformatted" ] || { echo "gofmt needed: $unformatted" >&2; return 1; }
+  nix_shell go go vet ./...
+  nix_shell go go test ./...
+  # the package build also catches a stale vendorHash after go.mod changes
   nix-build --no-out-link -I "nixpkgs=$nixpkgs" -E '
     let pkgs = import <nixpkgs> {}; in
-    import ./cli.nix { inherit (pkgs) lib pkgs; cfg = { terminal = { enable = true; package = pkgs.alacritty; }; }; incus = pkgs.incus; }' >/dev/null
+    import ./cli.nix { inherit (pkgs) lib pkgs; incus = pkgs.incus; }' >/dev/null
+}
+
+shell() {
   nix_shell shellcheck shellcheck ci/check.sh
 }
 
@@ -46,8 +54,9 @@ case ${1:-all} in
   syntax)  run syntax ;;
   lint)    run lint ;;
   eval)    run eval eval_examples ;;
+  go)      run go go_checks ;;
   shell)   run shell ;;
   secrets) run secrets ;;
-  all)     run syntax; run lint; run eval eval_examples; run shell; run secrets ;;
-  *)       echo "usage: $0 [syntax|lint|eval|shell|secrets]" >&2; exit 2 ;;
+  all)     run syntax; run lint; run eval eval_examples; run go go_checks; run shell; run secrets ;;
+  *)       echo "usage: $0 [syntax|lint|eval|go|shell|secrets]" >&2; exit 2 ;;
 esac

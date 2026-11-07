@@ -30,7 +30,8 @@ holds the keys for production access.
   e.g. a distinct background colour) that drops you into the
   machine, and each machine gets a launcher entry ("VM: NAME") for rofi, the COSMIC launcher and
   other desktop launchers.
-- **A small CLI**, `sacabox`: `sh`, `term`, `provision`, `root`, `ls`, `reset`, `stop`, `rm`, `tmp`.
+- **A small CLI**, `sacabox` (Go, talks to the Incus API): `sh`, `term`, `provision`, `reconcile`,
+  `plan`, `root`, `ls`, `reset`, `stop`, `rm`, `tmp`.
 
 ## Layout
 
@@ -40,7 +41,8 @@ options.nix          host options
 machine.nix          per-machine options
 templates.nix        built-in templates
 guest-nixos.nix      files generated for NixOS guests
-cli.nix              the `sacabox` command
+cli.nix              builds the `sacabox` command
+cmd/, internal/      its Go source
 lib/                 helpers
 examples/            sample machines directory (copy it to your own repo)
 ```
@@ -93,6 +95,55 @@ is set, it first refreshes the listed flake inputs and rebuilds the host, so the
 are in place. It then re-applies everything (resources, shares, network policy, guest system, init
 script, dotfiles, Home Manager) and is safe to run repeatedly. `--no-rebuild` skips the host
 rebuild.
+
+`sacabox plan NAME` (or `--all`) shows what would change without touching anything, and
+`sacabox reconcile NAME` (or `--all`) is `provision --no-rebuild` that skips machines already up
+to date: each machine records the hash of the spec it was last provisioned with.
+
+Provisioning runs under the machine's own network policy: it is attached from creation and never
+lifted, so updating a running machine neither cuts off nor opens up its services. Anything
+provisioning downloads must therefore be reachable under that policy. For now NixOS guests still
+rebuild inside the guest from cache.nixos.org, which `internet` allows; under `allowlist` or
+`none` add the cache to `network.allow` (this goes away once guests are built on the host).
+
+`internet` and `allowlist` machines sit on their own bridge (`services.sacabox.network.restricted`,
+`incusbr1` by default), separate from `open` ones. There the host only hands out addresses: it
+answers no DNS and accepts nothing but DHCP. Such a machine resolves names through the resolvers
+in its `network.nameservers`, which sacabox configures inside the guest and allows through its
+policy on port 53:
+
+```nix
+services.sacabox.machines.agent.network = {
+  policy = "internet";
+  nameservers = [ "9.9.9.9" ];   # any resolver the guest may use
+};
+```
+
+NixOS guests get them as `networking.nameservers`; other distros through cloud-init's network
+config when the machine is created. Changing a machine's policy between `open` and a restricted
+one moves its interface to the other bridge, which briefly re-plugs it and gives it a new address.
+
+Every NIC also gets Incus's MAC and IP filtering: a guest can only use its own MAC and its
+DHCP-assigned IPv4 address (no IPv6), so it can't impersonate another guest or the gateway on the
+shared bridge.
+
+The host's nftables ruleset is kept to the configuration (`services.sacabox.nftables.exclusive`,
+on by default): on every switch, tables that aren't declared in `networking.nftables.tables`,
+owned by Incus or listed in `services.sacabox.nftables.keep` are deleted, and the declared ones
+are reloaded, so rules added by hand don't survive a rebuild. Declare your own rules as
+`networking.nftables.tables`; a raw `networking.nftables.ruleset` (and `flushRuleset`, which would
+also delete Incus's tables) is refused.
+
+`sacabox reset` rolls back to the `clean` snapshot and re-applies the current config (policy,
+shares, ssh-agent) before the machine boots. Machines with settings sacabox never sets
+(`security.privileged`, `raw.lxc` and other `raw.*` keys, a foreign `raw.idmap`) are refused.
+Share sources are re-checked when a machine is provisioned: they must still be real directories
+under `allowedShareRoots`, with no symlink below the root.
+
+Some settings can't change on an existing machine: `type`, `os`, `image`, and the network policy
+to or from `none`. `sacabox` refuses those and leaves the machine alone, unless the machine sets
+`recreateOnChange = true`, in which case it is deleted and recreated (losing its root disk). Only
+instances sacabox created are ever deleted this way.
 
 ```nix
 services.sacabox.flake = {

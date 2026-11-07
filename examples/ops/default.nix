@@ -11,6 +11,7 @@
     sshAgent = false;
     snapshot = false;
     network.policy = "internet";
+    network.nameservers = [ "9.9.9.9" ];   # no DNS from the host under internet / allowlist
     # network.allow = [ { destination = "10.20.0.0/24"; ports = "22"; } ];
   };
 }

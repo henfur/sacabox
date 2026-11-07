@@ -41,17 +41,20 @@ let
   };
 
   net = config.network;
-  gateway = lib.head (lib.splitString "/" hostCfg.network.subnet);
+  # Restricted machines live on their own bridge, where the host answers no DNS (see default.nix).
+  restricted = net.policy == "internet" || net.policy == "allowlist";
+  bridge = if restricted then hostCfg.network.restricted else hostCfg.network;
+  gateway = lib.head (lib.splitString "/" bridge.subnet);
 
   rule = a:
     { action = "allow"; inherit (a) destination; state = "enabled"; }
     // optionalAttrs (a.ports != null) { destination_port = a.ports; protocol = if a.protocol == null then "tcp" else a.protocol; }
     // optionalAttrs (a.ports == null && a.protocol != null) { inherit (a) protocol; };
 
-  dnsRules = optional net.dns
-    { action = "allow"; destination = "${gateway}/32"; destination_port = "53"; protocol = "udp"; state = "enabled"; }
-  ++ optional net.dns
-    { action = "allow"; destination = "${gateway}/32"; destination_port = "53"; protocol = "tcp"; state = "enabled"; };
+  # The guest's own resolvers, reachable whatever the policy (private ones too).
+  dnsRules = lib.concatMap
+    (ns: map (proto: { action = "allow"; destination = "${ns}/32"; destination_port = "53"; protocol = proto; state = "enabled"; }) [ "udp" "tcp" ])
+    net.nameservers;
 
   hostIngress = optional net.hostAccess { action = "allow"; source = "${gateway}/32"; state = "enabled"; };
 
@@ -92,6 +95,16 @@ let
       manage_etc_hosts = true;
     }
     config.cloudInit.extra) + "\n";
+
+  # Netplan-style v2 config: keep DHCP for the address, take DNS only from `nameservers`.
+  cloudNetwork = builtins.toJSON {
+    version = 2;
+    ethernets.eth0 = {
+      dhcp4 = true;
+      dhcp4-overrides.use-dns = false;
+      nameservers.addresses = net.nameservers;
+    };
+  } + "\n";
 
   homeActivation =
     if config.home.modules == [ ] then null
@@ -166,6 +179,15 @@ in
       description = "Start with the host (boot.autostart).";
     };
 
+    recreateOnChange = mkOption {
+      type = types.bool; default = d [ "recreateOnChange" ] false;
+      description = ''
+        Delete and recreate the machine when a setting that can't change in place changes
+        (type, os, image, or network policy to or from "none"). Off: sacabox refuses and
+        leaves the machine alone. The root disk and everything on it is lost on recreation.
+      '';
+    };
+
     snapshot = mkOption {
       type = types.bool; default = d [ "snapshot" ] true;
       description = "Take a pristine `clean` snapshot after first provisioning (`sacabox reset` rolls back to it).";
@@ -224,7 +246,8 @@ in
         description = ''
           open:      full access (NAT through the host, can reach LAN and other machines).
           internet:  public internet only; private/LAN ranges blocked except `allow` entries.
-          allowlist: nothing except `allow` entries (plus DNS via the host if `dns`).
+          allowlist: nothing except `allow` entries (and `nameservers`).
+          internet and allowlist machines get no DNS from the host: set `nameservers`.
           none:      no network interface at all.
         '';
       };
@@ -234,9 +257,21 @@ in
         example = [ "192.168.1.50/32" { destination = "203.0.113.10/32"; ports = "22"; } ];
         description = "Destinations reachable under `internet` / `allowlist`. Plain strings are CIDRs, all ports.";
       };
+      # Removed: kept only so default.nix can explain the replacement (an assertion rejects it).
       dns = mkOption {
-        type = types.bool; default = d [ "network" "dns" ] true;
-        description = "Allow DNS queries to the host bridge (needed for names under `internet` / `allowlist`).";
+        type = types.nullOr types.bool; default = null; visible = false;
+        description = "Removed; see `nameservers`.";
+      };
+      nameservers = mkOption {
+        type = types.listOf (types.strMatching "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+");
+        default = d [ "network" "nameservers" ] [ ];
+        example = [ "203.0.113.53" ];
+        description = ''
+          DNS resolvers (IPv4) configured inside the guest, and allowed through its policy on port 53.
+          Machines under `internet` / `allowlist` get no DNS from the host, so without these they
+          can't resolve names. NixOS guests: `networking.nameservers`; others: cloud-init network
+          config, applied when the machine is created.
+        '';
       };
       hostAccess = mkOption {
         type = types.bool; default = d [ "network" "hostAccess" ] true;
@@ -321,7 +356,7 @@ in
   };
 
   config.spec = {
-        inherit (config) os type autostart snapshot nesting sshAgent color;
+        inherit (config) os type autostart snapshot nesting sshAgent color recreateOnChange;
         image =
           if config.image != null then config.image
           else if isNixos then hostCfg.nixosImage
@@ -332,15 +367,18 @@ in
           config.shares;
         network = {
           inherit (net) policy;
-          bridge = hostCfg.network.name;
+          bridge = bridge.name;
           inherit acl;
+          inherit (net) nameservers;
         };
         cloudInit = if isNixos then null else pkgs.writeText "cloud-init-${name}" cloudInit;
+        cloudNetwork = if isNixos || net.nameservers == [ ] then null else pkgs.writeText "cloud-network-${name}" cloudNetwork;
         nixos = if !isNixos then null else guest.spec {
           inherit isVm;
           inherit (hostCfg) user sshKeys nixosStateVersion;
           inherit (config.nixos) modules channel;
           inherit (config) shell;
+          inherit (net) nameservers;
         };
         terminal.settings = lib.recursiveUpdate (d [ "terminal" "settings" ] { }) config.terminal.settings;
         init = initFile;

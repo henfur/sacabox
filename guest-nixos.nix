@@ -9,7 +9,7 @@ let
   q = lib.strings.escapeNixString;
 in
 {
-  spec = { isVm, user, sshKeys, nixosStateVersion, modules, channel, shell }:
+  spec = { isVm, user, sshKeys, nixosStateVersion, modules, channel, shell, nameservers }:
     let
       mods = lib.imap0
         (i: src:
@@ -18,7 +18,7 @@ in
         modules;
     in
     {
-      inherit channel;
+      inherit channel nameservers;
       modules = map (m: { inherit (m) idx src isDir; }) mods;
 
       configuration = pkgs.writeText "configuration.nix" ''
@@ -51,7 +51,9 @@ in
             trusted-users = [ ${q user} ];
           };
           services.openssh.enable = lib.mkDefault true;
-
+          ${lib.optionalString (nameservers != [ ]) ''
+          networking.nameservers = [ ${lib.concatMapStringsSep " " q nameservers} ];
+          ''}
           # Lets the shell prompt / terminal title show which machine this is.
           environment.variables.VM_NAME = "@NAME@";
 
