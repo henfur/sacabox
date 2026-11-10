@@ -54,6 +54,14 @@ in
           ${lib.optionalString (nameservers != [ ]) ''
           networking.nameservers = [ ${lib.concatMapStringsSep " " q nameservers} ];
           ''}
+          ${lib.optionalString isVm ''
+          # Sessions opened with `incus exec` live in the agent's cgroup: with the
+          # default OOMPolicy=stop, one OOM kill would take down the agent and every
+          # shell/tmux with it. Only the killed process should go.
+          systemd.services.incus-agent.serviceConfig.OOMPolicy = "continue";
+          # VMs have no swap; compressed RAM gives headroom before the OOM killer.
+          zramSwap.enable = lib.mkDefault true;
+          ''}
           # Lets the shell prompt / terminal title show which machine this is.
           environment.variables.VM_NAME = "@NAME@";
 
