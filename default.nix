@@ -93,6 +93,11 @@ in
           message = "services.sacabox.network.restricted must be a different bridge with a different subnet than services.sacabox.network.";
         }
         {
+          # the `sacabox` table is what keeps the host closed to restricted guests (nixos-fw trusts their bridge)
+          assertion = nft.enable;
+          message = "services.sacabox: networking.nftables.enable must be true; the `sacabox` nftables table is what limits restricted guests to DHCP on the host.";
+        }
+        {
           # a flush also deletes Incus's tables: every guest would run unfiltered until Incus re-applies them
           assertion = !nft.flushRuleset;
           message = "services.sacabox: networking.nftables.flushRuleset would delete Incus's tables (guests' network policies) on every firewall reload. Declare your rules with networking.nftables.tables instead of a raw ruleset (services.sacabox.nftables.exclusive keeps the ruleset to the configuration), or set networking.nftables.flushRuleset = false.";
@@ -218,20 +223,25 @@ in
         fi
       '';
     };
-    networking.firewall.trustedInterfaces = [ cfg.network.name ];
-    # Restricted guests reach the host for DHCP only (their ACLs block the rest as well).
-    networking.firewall.interfaces.${cfg.network.restricted.name}.allowedUDPPorts = [ 67 ];
+    # Incus filters ACL'd NICs with bridge-level conntrack, so their DHCP broadcasts reach the
+    # host's input as ct state invalid and nixos-fw drops them before any port rule. Trusting the
+    # restricted bridge here gets them past that; the `sacabox` table below still drops
+    # everything from it except DHCP and replies.
+    networking.firewall.trustedInterfaces = [ cfg.network.name cfg.network.restricted.name ];
     networking.networkmanager.unmanaged = [
       "interface-name:${cfg.network.name}" "interface-name:${cfg.network.restricted.name}" "interface-name:tap*"
     ];
-    # Incus always accepts DNS to the bridge address for NICs with ACLs; a drop in any base chain
-    # on the hook is final, so this keeps the host's resolver out of reach of restricted guests.
+    # Restricted guests reach the host for DHCP only. Incus always accepts DNS to the bridge
+    # address for NICs with ACLs, and nixos-fw trusts the bridge (see above); a drop in any base
+    # chain on the hook is final, so this keeps everything else on the host out of their reach.
     networking.nftables.tables.sacabox = {
       family = "inet";
       content = ''
         chain input {
           type filter hook input priority filter; policy accept;
-          iifname "${cfg.network.restricted.name}" meta l4proto { tcp, udp } th dport 53 drop
+          iifname "${cfg.network.restricted.name}" udp sport 68 udp dport 67 accept
+          iifname "${cfg.network.restricted.name}" ct state established,related accept
+          iifname "${cfg.network.restricted.name}" drop
         }
       '';
     };

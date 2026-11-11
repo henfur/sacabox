@@ -85,8 +85,11 @@ per-machine opt-in. Say plainly in your summary when a change touches any of the
   unless the machine sets `recreateOnChange`, and only instances marked `managed` are ever deleted.
 - **NICs always get MAC/IPv4/IPv6 filtering** (`withFiltering`), whatever the policy.
 - **Restricted machines (`internet`, `allowlist`) use their own bridge**, where the host serves
-  DHCP only: `networking.nftables.tables.sacabox` drops DNS to the host (Incus always accepts it
-  for NICs with ACLs, but a drop in any base chain wins), and dnsmasq advertises no DNS server.
+  DHCP only: `networking.nftables.tables.sacabox` drops everything from that bridge to the host
+  except DHCP and replies (Incus always accepts DNS for NICs with ACLs, but a drop in any base
+  chain wins), and dnsmasq advertises no DNS server. nixos-fw trusts the bridge because Incus's
+  bridge-level conntrack makes the DHCP broadcasts `ct state invalid`, which it would drop; the
+  `sacabox` table is therefore the host-side guard and requires `networking.nftables.enable`.
   Their resolvers come from `network.nameservers`, allowed through the ACL automatically.
 - **The host's nftables are the configuration.** `services.sacabox.nftables.exclusive` deletes
   undeclared tables and reloads declared ones on every switch; tables named `incus` are Incus's and
